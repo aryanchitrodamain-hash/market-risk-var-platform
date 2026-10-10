@@ -229,78 +229,219 @@ tabs = st.tabs([
 with tabs[0]:
     st.header("Executive Summary")
     st.markdown("""
-    <div style="padding:26px 28px;border-radius:18px;background:linear-gradient(120deg,#101827 0%,#173b5e 55%,#226b75 100%);color:white;margin:8px 0 20px 0;">
+    <div style="padding:24px 26px;border-radius:18px;background:linear-gradient(120deg,#101827 0%,#173b5e 55%,#226b75 100%);color:white;margin:8px 0 20px 0;">
       <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:.8;">Quantitative Risk Analytics</div>
-      <div style="font-size:30px;font-weight:750;line-height:1.2;margin:8px 0 10px 0;">Portfolio Market Risk Command Center</div>
-      <div style="font-size:15px;line-height:1.6;max-width:900px;opacity:.92;">
-        An end-to-end framework for measuring downside risk, modelling changing volatility, validating VaR forecasts,
-        and exploring severe market scenarios — using the calculations and data produced by your research notebook.
+      <div style="font-size:29px;font-weight:750;line-height:1.2;margin:8px 0 10px 0;">Portfolio Market Risk — Executive Risk Review</div>
+      <div style="font-size:14px;line-height:1.6;max-width:1000px;opacity:.92;">
+        A consolidated view of 99% VaR across the calculated methods, rolling/walk-forward VaR backtesting at 95% and 99%,
+        stress scenarios, and the key risk conclusion. Values are sourced from the executed research notebook.
       </div>
     </div>
     """, unsafe_allow_html=True)
-    st.markdown("#### At a glance")
-    st.markdown("""
-    The project follows a nine-phase workflow: **market data → statistical diagnostics → portfolio P&L → VaR/CVaR →
-    EWMA → GARCH → skewed-t/GJR-GARCH → VaR backtesting → stress testing.** Each phase includes outputs and
-    interpretation notes so a reviewer can understand not just *what the number is*, but *what it means*.
-    """)
-    st.subheader("Project phases at a glance")
-    phase_overview = pd.DataFrame([
-        ["1", "Market data & portfolio", "Prices, log returns, weights, asset exposures, benchmark"],
-        ["2", "Data cleaning & diagnostics", "Missing data, return distribution, normality, autocorrelation and ARCH effects"],
-        ["3", "Portfolio P&L & risk foundation", "Portfolio value, daily mark-to-market P&L and realized losses"],
-        ["4", "VaR & CVaR estimation", "Historical, parametric and Monte Carlo loss quantiles / tail loss estimates"],
-        ["5", "EWMA volatility", "Exponentially weighted volatility that responds to recent market moves"],
-        ["6", "GARCH volatility", "Conditional volatility from a GARCH model and standardized-residual diagnostics"],
-        ["7", "Skew-t / GJR-GARCH", "Flexible tail/asymmetry modelling and leverage-effect analysis"],
-        ["8", "VaR backtesting", "Walk-forward exceptions, Kupiec, Christoffersen and Basel traffic-light checks"],
-        ["9", "Stress testing", "Worst observed daily / multi-day losses and scenario analysis"],
-    ], columns=["Phase", "Area", "Purpose"])
-    st.dataframe(phase_overview, use_container_width=True, hide_index=True)
-    st.markdown("""
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 22px 0;">
-      <span style="padding:8px 12px;border-radius:9px;background:#e8f1fb;color:#16416b;font-weight:650;">01 Data</span>
-      <span style="padding:8px 12px;border-radius:9px;background:#e8f1fb;color:#16416b;font-weight:650;">02 Diagnose</span>
-      <span style="padding:8px 12px;border-radius:9px;background:#e8f1fb;color:#16416b;font-weight:650;">03 Measure P&amp;L</span>
-      <span style="padding:8px 12px;border-radius:9px;background:#e5f5ef;color:#155b45;font-weight:650;">04 VaR / ES</span>
-      <span style="padding:8px 12px;border-radius:9px;background:#e5f5ef;color:#155b45;font-weight:650;">05–07 Volatility</span>
-      <span style="padding:8px 12px;border-radius:9px;background:#fff1db;color:#7a4a05;font-weight:650;">08 Validate</span>
-      <span style="padding:8px 12px;border-radius:9px;background:#fbe8e8;color:#8b2828;font-weight:650;">09 Stress</span>
-    </div>
-    """, unsafe_allow_html=True)
 
+    # Small helpers are local to this page and read only notebook outputs.
+    def _as_float(v):
+        try:
+            if np.isscalar(v) and pd.notna(v):
+                return float(v)
+        except Exception:
+            pass
+        return None
+
+    def _dict_conf_value(d, confidence, contains=None):
+        if not isinstance(d, dict):
+            return None
+        target = f"{confidence:.2f}"
+        for key, value in d.items():
+            key_s = str(key).lower()
+            if target in key_s and (contains is None or contains.lower() in key_s):
+                val = _as_float(value)
+                if val is not None:
+                    return val
+        return None
+
+    def _money_loss(v):
+        return "—" if v is None else f"₹{abs(v):,.0f}"
+
+    def _pvalue(v):
+        try:
+            x = float(v)
+            return "<0.001" if x < 0.001 else f"{x:.3f}"
+        except Exception:
+            return "—"
+
+    # Portfolio context — retain useful context, but replace raw observation-count cards with risk measures.
+    st.subheader("Portfolio context")
     c1, c2, c3, c4 = st.columns(4)
-    show_metric("Initial investment", fmt_money(investment), "Starting capital used to construct the portfolio in the notebook.")
-    show_metric("Portfolio assets", str(len(raw_data.columns) if isinstance(raw_data, pd.DataFrame) else len(tickers)),
-                "Count of assets in the downloaded portfolio price data; the benchmark is intended to be separate.")
-    show_metric("Price observations", f"{len(raw_data):,}" if isinstance(raw_data, pd.DataFrame) else "Not available",
-                "Number of dated rows in the raw price DataFrame.")
-    show_metric("P&L observations", f"{len(pnl):,}" if pnl is not None else "Not available",
-                "Number of available daily mark-to-market P&L observations.")
+    show_metric("Initial investment", fmt_money(investment), "Starting capital used by the notebook.")
+    show_metric("Portfolio assets", str(raw_data.shape[1] if isinstance(raw_data, pd.DataFrame) else len(tickers)),
+                "Number of portfolio instruments in the downloaded price data; benchmark is separate where configured.")
+    if pnl is not None and not pnl.empty:
+        worst_day = float(pnl.min())
+        worst_day_date = pnl.idxmin()
+        rolling5 = pnl.rolling(5).sum().dropna()
+        worst_5day = float(rolling5.min()) if not rolling5.empty else None
+        worst_5day_date = rolling5.idxmin() if not rolling5.empty else None
+        show_metric("Worst observed 1-day loss", _money_loss(worst_day),
+                    f"Largest daily P&L loss in the sample; date: {worst_day_date.date() if hasattr(worst_day_date, 'date') else worst_day_date}.")
+        show_metric("Worst observed 5-day loss", _money_loss(worst_5day),
+                    f"Worst rolling five-observation P&L sum; end date: {worst_5day_date.date() if hasattr(worst_5day_date, 'date') else worst_5day_date}.")
+    else:
+        show_metric("Worst observed 1-day loss", "—", "Portfolio P&L was unavailable.")
+        show_metric("Worst observed 5-day loss", "—", "Portfolio P&L was unavailable.")
 
-    st.subheader("Portfolio behaviour")
-    left, right = st.columns(2)
-    with left:
-        chart_line(portfolio_value, "Portfolio Value", "Portfolio value (₹)",
-                   "A rising line means the marked portfolio value increased over the period; drawdowns show declines from prior peaks.")
-    with right:
-        chart_line(pnl, "Daily Mark-to-Market P&L", "Daily P&L (₹)",
-                   "Positive values are gains and negative values are losses, assuming the notebook's P&L sign convention.")
-    st.subheader("Risk concepts used in this project")
-    concept_cols = st.columns(3)
-    with concept_cols[0]:
-        st.markdown("**VaR — Value at Risk**")
-        st.write("A loss threshold for a chosen confidence level and horizon. For example, 99% one-day VaR is intended to be exceeded by losses on about 1% of comparable days, if the model is calibrated.")
-    with concept_cols[1]:
-        st.markdown("**CVaR / Expected Shortfall**")
-        st.write("The average loss in the tail beyond the VaR threshold. It describes how severe losses may be when VaR is exceeded.")
-    with concept_cols[2]:
-        st.markdown("**Volatility forecasting**")
-        st.write("EWMA and GARCH-family models estimate changing return variability. Higher forecast volatility generally implies a wider potential loss distribution.")
-    explain("VaR confidence level", "The probability mass below the loss quantile boundary.", "A higher confidence level (99% vs 95%) generally produces a larger loss estimate.", "VaR is not a maximum-loss guarantee and does not tell you the size of losses beyond the threshold.")
-    explain("CVaR / Expected Shortfall", "The average of observations in the loss tail beyond VaR.", "CVaR should usually be at least as severe as VaR when both are represented as positive loss magnitudes.", "Check sign conventions and ensure VaR and CVaR use the same horizon and P&L series.")
-    explain("Backtesting exceptions", "Days when realized loss exceeds the forecast VaR threshold.", "Too many exceptions or clustered exceptions can indicate underestimation or poor responsiveness.", "Backtesting results depend on sample length, confidence level, and the forecast design.")
-    st.info("The values and tables in this dashboard are taken from your notebook's executed variables where available. A missing output is labelled as unavailable rather than fabricated.")
+    st.divider()
+    st.subheader("1. One-day VaR comparison — all calculated methods")
+    st.caption("VaR is displayed as a positive loss magnitude. Compare methods only when horizon, currency, portfolio base and sign convention are consistent.")
+
+    # Prefer the notebook's final consolidated comparison table, which includes EWMA/GARCH/GJR-GARCH/Monte Carlo/Historical.
+    va_table = None
+    if isinstance(var_compare, pd.DataFrame) and not var_compare.empty:
+        vc = var_compare.copy()
+        row99 = None
+        for idx in vc.index:
+            if "99" in str(idx):
+                row99 = vc.loc[idx]
+                break
+        if row99 is not None:
+            va_table = pd.DataFrame({
+                "Method": [str(c).replace("_", " ").replace("skwed", "Skewed-t") for c in row99.index],
+                "99% one-day VaR (loss magnitude)": [abs(float(v)) if pd.notna(v) else np.nan for v in row99.values],
+            }).dropna(subset=["99% one-day VaR (loss magnitude)"])
+    if va_table is None or va_table.empty:
+        va_rows = []
+        for label, data in [
+            ("Historical", historical_var), ("Parametric", parametric_var),
+            ("Monte Carlo (Student-t)", monte_carlo_var),
+        ]:
+            val = _dict_conf_value(data, 0.99)
+            if val is not None:
+                va_rows.append({"Method": label, "99% one-day VaR (loss magnitude)": abs(val)})
+        # Volatility-scaled models may be available under their own notebook variables.
+        for label, data, key in [
+            ("Historical", historical_var, "historical_var_0.99"),
+        ]:
+            pass
+        va_table = pd.DataFrame(va_rows)
+
+    if va_table is not None and not va_table.empty:
+        va_table["99% one-day VaR (loss magnitude)"] = va_table["99% one-day VaR (loss magnitude)"].map(lambda x: f"₹{x:,.0f}")
+        st.dataframe(va_table, use_container_width=True, hide_index=True)
+    else:
+        st.info("The notebook did not expose a 99% comparison table in a recognized format. Open Phase 4 for the raw VaR outputs.")
+
+    # Also surface 95% estimates for comparison, particularly useful when reviewing the rolling backtest.
+    with st.expander("Compare 95% VaR estimates", expanded=False):
+        va95_table = None
+        if isinstance(var_compare, pd.DataFrame) and not var_compare.empty:
+            row95 = None
+            for idx in var_compare.index:
+                if "95" in str(idx):
+                    row95 = var_compare.loc[idx]
+                    break
+            if row95 is not None:
+                va95_table = pd.DataFrame({
+                    "Method": [str(c).replace("_", " ").replace("skwed", "Skewed-t") for c in row95.index],
+                    "95% one-day VaR (loss magnitude)": [abs(float(v)) if pd.notna(v) else np.nan for v in row95.values],
+                }).dropna(subset=["95% one-day VaR (loss magnitude)"])
+        if va95_table is not None and not va95_table.empty:
+            va95_table["95% one-day VaR (loss magnitude)"] = va95_table["95% one-day VaR (loss magnitude)"].map(lambda x: f"₹{x:,.0f}")
+            st.dataframe(va95_table, use_container_width=True, hide_index=True)
+        else:
+            st.write("A 95% comparison row was not found in the consolidated table.")
+
+    st.divider()
+    st.subheader("2. Rolling / walk-forward VaR backtesting — 95% and 99%")
+    st.write("The rolling backtest compares each forecast with later realized P&L. A calibrated model should have an exception rate close to 5% at 95% confidence and close to 1% at 99% confidence, without excessive clustering.")
+    if isinstance(backtest_df, pd.DataFrame) and not backtest_df.empty:
+        bt = backtest_df.copy()
+        # Keep only the decision-useful columns while preserving the notebook's original test outputs.
+        wanted = [c for c in ["Method", "Confidence", "N_Obs", "N_Exceptions", "Expected_Exceptions", "Exception_Rate", "Expected_Rate", "Kupiec_pvalue", "Christoffersen_pvalue", "ConditionalCoverage_pvalue", "Traffic_Light"] if c in bt.columns]
+        summary_bt = bt[wanted].copy() if wanted else bt.copy()
+        if "Exception_Rate" in summary_bt.columns:
+            summary_bt["Exception_Rate"] = pd.to_numeric(summary_bt["Exception_Rate"], errors="coerce").map(lambda x: f"{x:.2%}" if pd.notna(x) else "—")
+        if "Expected_Rate" in summary_bt.columns:
+            summary_bt["Expected_Rate"] = pd.to_numeric(summary_bt["Expected_Rate"], errors="coerce").map(lambda x: f"{x:.2%}" if pd.notna(x) else "—")
+        if "Expected_Exceptions" in summary_bt.columns:
+            summary_bt["Expected_Exceptions"] = pd.to_numeric(summary_bt["Expected_Exceptions"], errors="coerce").map(lambda x: f"{x:,.1f}" if pd.notna(x) else "—")
+        for col in ["Kupiec_pvalue", "Christoffersen_pvalue", "ConditionalCoverage_pvalue"]:
+            if col in summary_bt.columns:
+                summary_bt[col] = summary_bt[col].map(_pvalue)
+        st.dataframe(summary_bt, use_container_width=True, hide_index=True)
+
+        if {"Method", "Confidence", "Exception_Rate"}.issubset(bt.columns):
+            chart_bt = bt.copy()
+            chart_bt["Exception_Rate_pct"] = pd.to_numeric(chart_bt["Exception_Rate"], errors="coerce") * 100
+            chart_bt["Target exception rate (%)"] = chart_bt["Confidence"].astype(str).map({"95%": 5.0, "99%": 1.0})
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=chart_bt["Method"] + " · " + chart_bt["Confidence"].astype(str),
+                                 y=chart_bt["Exception_Rate_pct"], name="Observed exception rate"))
+            fig.add_trace(go.Scatter(x=chart_bt["Method"] + " · " + chart_bt["Confidence"].astype(str),
+                                     y=chart_bt["Target exception rate (%)"], name="Target exception rate",
+                                     mode="markers+lines", marker=dict(size=9)))
+            fig.update_layout(title="Rolling VaR backtest: observed vs target exception rates",
+                              yaxis_title="Exception rate (%)", xaxis_title="Method and confidence level",
+                              template="plotly_dark", height=390, barmode="group")
+            st.plotly_chart(fig, use_container_width=True, key="summary_rolling_backtest")
+
+        if "Exception_Rate" in bt.columns and "Expected_Rate" in bt.columns:
+            observed = pd.to_numeric(bt["Exception_Rate"], errors="coerce")
+            expected = pd.to_numeric(bt["Expected_Rate"], errors="coerce")
+            bad = bool((observed > expected).any())
+            if bad:
+                st.warning("Model-validation finding: at least one method's observed exception rate is above its target rate. Review the VaR scale/sign convention, rolling-window construction and model calibration before using these forecasts for decisions.")
+    else:
+        st.info("No walk-forward backtest table was available from the notebook.")
+
+    st.divider()
+    st.subheader("3. Stress-testing results — historical, 95% tail risk and 99% volatility shocks")
+    stress_rows = []
+    if pnl is not None and not pnl.empty:
+        stress_rows.append({"Stress measure": "Worst historical 1-day loss", "Confidence / scenario": "Historical replay", "Loss magnitude": abs(float(pnl.min())), "Interpretation": "Largest observed daily P&L loss"})
+        r5 = pnl.rolling(5).sum().dropna()
+        if not r5.empty:
+            stress_rows.append({"Stress measure": "Worst historical 5-day loss", "Confidence / scenario": "Historical replay", "Loss magnitude": abs(float(r5.min())), "Interpretation": "Largest rolling five-observation cumulative P&L loss"})
+    # Stressed ES is calculated at 95% in the notebook; do not invent a 99% stressed ES if not calculated there.
+    stressed_es = _as_float(first_value(ns, "stressed_es_95"))
+    normal_es95 = _as_float(first_value(ns, "hist_C_VAR_95"))
+    if stressed_es is not None:
+        stress_rows.append({"Stress measure": "Expected Shortfall", "Confidence / scenario": "95% stressed window", "Loss magnitude": abs(stressed_es), "Interpretation": "Average tail loss during the selected crisis window"})
+    if normal_es95 is not None:
+        stress_rows.append({"Stress measure": "Expected Shortfall", "Confidence / scenario": "95% normal sample", "Loss magnitude": abs(normal_es95), "Interpretation": "Historical 95% tail-loss benchmark"})
+    for name, label in [("stressed_var_doubled_vol", "GARCH volatility doubles — 99% VaR"),
+                        ("stressed_gjr_var_doubled_vol", "GJR-GARCH volatility doubles — 99% VaR")]:
+        value = _as_float(first_value(ns, name))
+        if value is not None:
+            stress_rows.append({"Stress measure": "Volatility shock", "Confidence / scenario": label, "Loss magnitude": abs(value), "Interpretation": "Notebook's 2× volatility stress estimate"})
+    if isinstance(scenario_df, pd.DataFrame) and not scenario_df.empty:
+        for _, r in scenario_df.iterrows():
+            scenario_name = str(r.get("Scenario", "Hypothetical scenario"))
+            if "Stressed Loss" in scenario_df.columns:
+                loss_val = _as_float(r.get("Stressed Loss"))
+                if loss_val is not None:
+                    stress_rows.append({"Stress measure": "Hypothetical shock", "Confidence / scenario": scenario_name,
+                                        "Loss magnitude": abs(loss_val), "Interpretation": str(r.get("Shock", "Assumed market shock"))})
+    if stress_rows:
+        stress_table = pd.DataFrame(stress_rows).drop_duplicates(subset=["Stress measure", "Confidence / scenario"])
+        stress_table["Loss magnitude"] = stress_table["Loss magnitude"].map(lambda x: f"₹{x:,.0f}")
+        st.dataframe(stress_table, use_container_width=True, hide_index=True)
+    else:
+        st.info("No stress-test summary outputs were available from the notebook.")
+
+    st.caption("The notebook calculates stressed Expected Shortfall at 95% and volatility-doubling VaR scenarios at 99%. A stressed 99% Expected Shortfall is not displayed because the notebook does not calculate that specific metric.")
+
+    st.divider()
+    st.subheader("4. Overall conclusion")
+    st.markdown("""
+    **Conclusion:** The notebook combines historical, parametric, Monte Carlo, EWMA, skewed-t GARCH and GJR-GARCH risk estimates with rolling VaR backtesting and stress scenarios. The risk methods produce materially different 99% loss estimates, showing that model assumptions and volatility treatment matter.
+
+    The backtesting table is the key validation test: observed exception rates should be compared with the 5% target at 95% confidence and the 1% target at 99% confidence. Where observed rates or coverage-test results are inconsistent with those targets, the forecast should be treated as **not yet validated**, rather than declaring a model successful.
+
+    Before interpreting the outputs as production-ready portfolio risk, confirm common currency treatment for every holding, consistent P&L/VaR units and sign conventions, no look-ahead bias in rolling forecasts, and reproducible results from a clean run of the notebook.
+    """)
+    explain("99% VaR", "The one-day loss threshold intended to be exceeded on approximately 1% of comparable days when calibrated.", "It is more conservative than 95% VaR in the same model and horizon.", "It is not the maximum possible loss; it does not describe the severity of losses beyond the threshold.")
+    explain("Rolling / walk-forward backtesting", "Tests forecasts generated over time against later realized P&L.", "Compare observed exceptions with expected exceptions and inspect Kupiec/Christoffersen p-values.", "Excess exceptions may reflect calibration problems, sign/unit errors, or a model that does not adapt adequately to changing risk.")
+    explain("Stress testing", "Evaluates losses under historical crisis windows and hypothetical market/volatility shocks.", "It complements VaR by showing outcomes under severe scenarios.", "Stress scenarios are conditional exercises, not probability forecasts; the notebook only computes stressed ES at 95% and 2× volatility VaR at 99%.")
 
 # ---------------- PHASE 1 ----------------
 with tabs[1]:
