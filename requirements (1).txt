@@ -1,0 +1,10 @@
+streamlit
+nbformat
+pandas
+numpy
+plotly
+scipy
+yfinance
+arch
+statsmodels
+matplotlib
